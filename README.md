@@ -31,8 +31,8 @@ The "Smarthaven" is an important part of IDC's open source management projects, 
 * DevOps (GitOps)
 
 ## Community
-[Online Community Meeting (open)] (Coming soon.)
-[Online Community Meeting (VNET internal link)] (Coming soon.)
+[Online Community Meeting (open)] (Coming soon.)  
+[Online Community Meeting (VNET internal link)] (Coming soon.)  
 
 ## Contribution
 Smarthaven is developed in the open, and is constantly being improved by our **users, contributors, and maintainers**. It is because of you that we can bring great software to the community.

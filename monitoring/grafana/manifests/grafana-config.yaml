@@ -1,0 +1,13 @@
+apiVersion: v1
+data:
+  grafana.ini: W3NlcnZlcl0Kcm9vdF91cmwgPSBodHRwOi8vZ3JhZmFuYS5kZXYuMjF2aWFuZXQuY29tLwo=
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/component: grafana
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: kube-prometheus
+    app.kubernetes.io/version: 7.5.4
+  name: grafana-config
+  namespace: monitoring
+type: Opaque

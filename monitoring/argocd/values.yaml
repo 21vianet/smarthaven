@@ -1,0 +1,406 @@
+nameOverride: argocd
+global:
+  image:
+    repository: harbor.dev.21vianet.com/library/argocd
+    tag: "v2.1.5"
+    imagePullPolicy: IfNotPresent
+apiVersionOverrides:
+  ingress: "networking.k8s.io/v1"
+
+createAggregateRoles: false
+
+controller:
+  name: application-controller
+  enableStatefulSet: true
+
+  args:
+    statusProcessors: "20"
+    operationProcessors: "10"
+    appResyncPeriod: "180"
+    selfHealTimeout: "5"
+    repoServerTimeoutSeconds: "60"
+
+  logFormat: text
+  logLevel: info
+  containerPort: 8082
+  service:
+    port: 8082
+    portName: https-controller
+
+  resources:
+    limits:
+      cpu: 1
+      memory: 2048Mi
+    requests:
+      cpu: 0.5
+      memory: 1024Mi
+  serviceAccount:
+    create: true
+  clusterAdminAccess:
+    enabled: true
+
+dex:
+  enabled: true
+  name: dex-server
+  image:
+    repository: harbor.dev.21vianet.com/library/dex
+    tag: v2.30.0
+    imagePullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: true
+
+  volumeMounts:
+    - name: static-files
+      mountPath: /shared
+
+  volumes:
+    - name: static-files
+      emptyDir: {}
+
+  containerPortHttp: 5556
+  servicePortHttp: 5556
+  servicePortHttpName: http
+  containerPortGrpc: 5557
+  servicePortGrpc: 5557
+  servicePortGrpcName: grpc
+  containerPortMetrics: 5558
+  servicePortMetrics: 5558
+
+  resources:
+    limits:
+      cpu: 1
+      memory: 2048Mi
+    requests:
+      cpu: 0.5
+      memory: 1024Mi
+
+redis:
+  enabled: false
+
+redis-ha:
+  enabled: true
+  exporter:
+    enabled: false
+  persistentVolume:
+    enabled: true
+    storageClass: "csi-rbd-sc"
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+  redis:
+    masterGroupName: argocd
+    config:
+      save: '""'
+    resources:
+      limits:
+        cpu: 1
+        memory: 2048Mi
+      requests:
+        cpu: 0.5
+        memory: 1024Mi
+  haproxy:
+    enabled: true
+    metrics:
+      enabled: false
+    resources:
+      limits:
+        cpu: 1
+        memory: 2048Mi
+      requests:
+        cpu: 0.5
+        memory: 1024Mi
+    image:
+      repository: harbor.dev.21vianet.com/library/haproxy
+  image:
+    tag: 6.2.4
+    repository: harbor.dev.21vianet.com/library/redis
+  sentinel:
+    resources:
+      limits:
+        cpu: 1
+        memory: 2048Mi
+      requests:
+        cpu: 0.5
+        memory: 1024Mi
+
+## Server
+server:
+  name: server
+  replicas: 2
+
+  autoscaling:
+    enabled: false
+
+  staticAssets:
+    enabled: true
+  extraArgs:
+    - --insecure
+  logFormat: text
+  logLevel: info
+  containerPort: 8080
+
+  resources:
+    limits:
+      cpu: 1
+      memory: 2048Mi
+    requests:
+      cpu: 0.5
+      memory: 1024Mi
+
+  certificate:
+    enabled: false
+
+  service:
+    type: ClusterIP
+    servicePortHttp: 80
+    servicePortHttps: 443
+    servicePortHttpName: http
+    servicePortHttpsName: https
+    namedTargetPort: true
+    externalTrafficPolicy: ""
+    sessionAffinity: ""
+  env:
+    - name: ARGOCD_API_SERVER_REPLICAS
+      value: '2'
+  metrics:
+    enabled: false
+
+  serviceAccount:
+    create: true
+
+  ingress:
+    enabled: false
+    annotations:
+      ingress.kubernetes.io/proxy-body-size: "0"
+      ingress.kubernetes.io/ssl-redirect: "true"
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+    ingressClassName: "traefik"
+    hosts:
+      - argocd.dev.21vianet.com
+
+    paths:
+      - /
+    pathType: Prefix
+    tls:
+      - secretName: argocd-tls-certificate
+        hosts:
+          - argocd.dev.21vianet.com
+
+    # -- Uses `server.service.servicePortHttps` instead `server.service.servicePortHttp`
+    https: false
+
+  ingressGrpc:
+    enabled: false
+
+  configEnabled: true
+  config:
+    # Argo CD's externally facing base URL (optional). Required when configuring SSO
+    url: https://argocd.dev.21vianet.com
+    application.instanceLabelKey: argocd.argoproj.io/instance
+    resource.customizations: |
+      networking.k8s.io/Ingress:
+        health.lua: |
+          hs = {}
+          hs.status = "Healthy"
+          return hs
+    dex.config: |
+      connectors:
+        - type: gitlab
+          # Required field for connector id.
+          id: gitlab
+          # Required field for connector name.
+          name: GitLab
+          config:
+            # optional, default = https://gitlab.com
+            baseURL: https://gitlab.dev.21vianet.com
+            # Credentials can be string literals or pulled from the environment.
+            clientID: hide......
+            clientSecret: hide.....
+            redirectURI: http://127.0.0.1:5556/dex/callback
+            # Optional groups whitelist, communicated through the "groups" scope.
+            # If `groups` is omitted, all of the user's GitLab groups are returned when the groups scope is present.
+            # If `groups` is provided, this acts as a whitelist - only the user's GitLab groups that are in the configured `groups` below will go into the groups claim.  Conversely, if the user is not in any of the configured `groups`, the user will not be authenticated.
+            # groups:
+            # - my-group
+            # flag which will switch from using the internal GitLab id to the users handle (@mention) as the user id.
+            # It is possible for a user to change their own user name but it is very rare for them to do so
+            useLoginAsID: false
+              
+
+  rbacConfigCreate: true
+
+  clusterAdminAccess:
+    enabled: true
+
+## Repo Server
+repoServer:
+  name: repo-server
+  replicas: 2
+
+  autoscaling:
+    enabled: false
+  containerPort: 8081
+  resources:
+    limits:
+      cpu: 1
+      memory: 2048Mi
+    requests:
+      cpu: 0.5
+      memory: 1024Mi
+
+  service:
+    port: 8081
+    portName: https-repo-server
+
+  metrics:
+    enabled: false
+
+  clusterAdminAccess:
+    enabled: true
+  serviceAccount:
+    create: true
+    name: "argocd-repo-server"
+    automountServiceAccountToken: true
+
+
+## Argo Configs
+configs:
+  clusterCredentials: []
+  gpgKeysAnnotations: {}
+  gpgKeys: {}
+  knownHostsAnnotations: {}
+  knownHosts:
+    data:
+      # -- Known Hosts
+      # @default -- See [values.yaml]
+      ssh_known_hosts: |
+        bitbucket.org ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAubiN81eDcafrgMeLzaFPsw2kNvEcqTKl/VqLat/MaB33pZy0y3rJZtnqwR2qOOvbwKZYKiEO1O6VqNEBxKvJJelCq0dTXWT5pbO2gDXC6h6QDXCaHo6pOHGPUy+YBaGQRGuSusMEASYiWunYN0vCAI8QaXnWMXNMdFP3jHAJH0eDsoiGnLPBlBp4TNm6rYI74nMzgz3B9IikW4WVK+dc8KZJZWYjAuORU3jc1c/NPskD2ASinf8v3xnfXeukU0sJ5N6m5E8VLjObPEO+mN2t/FZTMZLiFqPWc/ALSqnMnnhwrNi2rbfg/rd/IpL8Le3pSBne8+seeFVBoGqzHM9yXw==
+        github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==
+        gitlab.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFSMqzJeV9rUzU4kWitGjeR4PWSa29SPqJ1fVkhtj3Hw9xjLVXVYrU9QlYWrOLXBpQ6KWjbjTDTdDkoohFzgbEY=
+        gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf
+        gitlab.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCsj2bNKTBSpIYDEGk9KxsGh3mySTRgMtXL583qmBpzeQ+jqCMRgBqB98u3z++J1sKlXHWfM9dyhSevkMwSbhoR8XIq/U0tCNyokEi/ueaBMCvbcTHhO7FcwzY92WK4Yt0aGROY5qX2UKSeOvuP4D6TPqKF1onrSzH9bx9XUf2lEdWT/ia1NEKjunUqu1xOB/StKDHMoX4/OKyIzuS0q/T1zOATthvasJFoPrAjkohTyaDUz2LN5JoH839hViyEG82yB+MjcFV5MU3N1l1QL3cVUCh93xSaua1N85qivl+siMkPGbO5xR/En4iEY6K2XPASUEMaieWVNTRCtJ4S8H+9
+        ssh.dev.azure.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7Hr1oTWqNqOlzGJOfGJ4NakVyIzf1rXYd4d7wo6jBlkLvCA4odBlL0mDUyZ0/QUfTTqeu+tm22gOsv+VrVTMk6vwRU75gY/y9ut5Mb3bR5BV58dKXyq9A9UeB5Cakehn5Zgm6x1mKoVyf+FFn26iYqXJRgzIZZcZ5V6hrE0Qg39kZm4az48o0AUbf6Sp4SLdvnuMa2sVNwHBboS7EJkm57XQPVU3/QpyNLHbWDdzwtrlS+ez30S3AdYhLKEOxAG8weOnyrtLJAUen9mTkol8oII1edf7mWWbWVf0nBmly21+nZcmCTISQBtdcyPaEno7fFQMDD26/s0lfKob4Kw8H
+        vs-ssh.visualstudio.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7Hr1oTWqNqOlzGJOfGJ4NakVyIzf1rXYd4d7wo6jBlkLvCA4odBlL0mDUyZ0/QUfTTqeu+tm22gOsv+VrVTMk6vwRU75gY/y9ut5Mb3bR5BV58dKXyq9A9UeB5Cakehn5Zgm6x1mKoVyf+FFn26iYqXJRgzIZZcZ5V6hrE0Qg39kZm4az48o0AUbf6Sp4SLdvnuMa2sVNwHBboS7EJkm57XQPVU3/QpyNLHbWDdzwtrlS+ez30S3AdYhLKEOxAG8weOnyrtLJAUen9mTkol8oII1edf7mWWbWVf0nBmly21+nZcmCTISQBtdcyPaEno7fFQMDD26/s0lfKob4Kw8H
+  # -- TLS certificate configmap annotations
+  tlsCertsAnnotations: {}
+  tlsCerts:
+    data:
+      gitlab.dev.21vianet.com: |
+        -----BEGIN CERTIFICATE-----
+        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
+        -----END CERTIFICATE-----
+
+  # -- Repository credentials to be used as Templates for other repos
+  ## Creates a secret for each key/value specified below to create repository credentials
+  credentialTemplates: {}
+    # github-enterprise-creds-1:
+    #   url: https://github.com/argoproj
+    #   githubAppID: 1
+    #   githubAppInstallationID: 2
+    #   githubAppEnterpriseBaseUrl: https://ghe.example.com/api/v3
+    #   githubAppPrivateKey: |
+    #     -----BEGIN OPENSSH PRIVATE KEY-----
+    #     ...
+    #     -----END OPENSSH PRIVATE KEY-----
+    # https-creds:
+    #   url: https://github.com/argoproj
+    #   password: my-password
+    #   username: my-username
+    # ssh-creds:
+    #  url: git@github.com:argoproj-labs
+    #  sshPrivateKey: |
+    #    -----BEGIN OPENSSH PRIVATE KEY-----
+    #    ...
+    #    -----END OPENSSH PRIVATE KEY-----
+
+  # -- Repositories list to be used by applications
+  ## Creates a secret for each key/value specified below to create repositories
+  ## Note: the last example in the list would use a repository credential template, configured under "configs.repositoryCredentials".
+  repositories: {}
+    # istio-helm-repo:
+    #   url: https://storage.googleapis.com/istio-prerelease/daily-build/master-latest-daily/charts
+    #   name: istio.io
+    #   type: helm
+    # private-helm-repo:
+    #   url: https://my-private-chart-repo.internal
+    #   name: private-repo
+    #   type: helm
+    #   password: my-password
+    #   username: my-username
+    # private-repo:
+    #   url: https://github.com/argoproj/private-repo
+
+  secret:
+    # -- Create the argocd-secret
+    createSecret: true
+
+    # -- Shared secret for authenticating GitHub webhook events
+    githubSecret: ""
+    # -- Shared secret for authenticating GitLab webhook events
+    gitlabSecret: ""
+    # -- Shared secret for authenticating BitbucketServer webhook events
+    bitbucketServerSecret: ""
+    # -- UUID for authenticating Bitbucket webhook events
+    bitbucketUUID: ""
+    # -- Shared secret for authenticating Gogs webhook events
+    gogsSecret: ""
+
+    # -- add additional secrets to be added to argocd-secret
+    ## Custom secrets. Useful for injecting SSO secrets into environment variables.
+    ## Ref: https://argoproj.github.io/argo-cd/operator-manual/sso/
+    ## Note that all values must be non-empty.
+    extra:
+      {}
+      # LDAP_PASSWORD: "mypassword"
+
+    # -- Argo TLS Data
+    argocdServerTlsConfig:
+      {}
+      # key:
+      # crt: |
+      #   -----BEGIN CERTIFICATE-----
+      #   <cert data>
+      #   -----END CERTIFICATE-----
+      #   -----BEGIN CERTIFICATE-----
+      #   <ca cert data>
+      #   -----END CERTIFICATE-----
+
+    # -- Bcrypt hashed admin password
+    ## Argo expects the password in the secret to be bcrypt hashed. You can create this hash with
+    ## `htpasswd -nbBC 10 "" $ARGO_PWD | tr -d ':\n' | sed 's/$2y/$2a/'`
+    argocdServerAdminPassword: "hide...."
+    # -- Admin password modification time. Eg. `"2006-01-02T15:04:05Z"`
+    # @default -- `""` (defaults to current time)
+    argocdServerAdminPasswordMtime: ""
+

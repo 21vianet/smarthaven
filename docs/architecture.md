@@ -1,6 +1,6 @@
 Smarthaven智航数据中心基础设施监控管理系统是从大规模数据中心管理需求出发，集合数据中心运营的特点，从设备的底层监控到管理，再到全面运营流程管理，运用数据挖掘、人工智能、实时运算等多种手段，对各种工作进行高效协调、调度、指引实现数据中心基础设施高效、安全的维护工作。
 
-![smarthaven architecture](docs/img/smarthaven_architecture.png)
+![smarthaven architecture](img/smarthaven_architecture.png)
 
 架构特点：
 

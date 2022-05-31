@@ -1,7 +1,7 @@
 # smarthaven
 
 ## Notice
-In order to project can better applicable to complex of business scenarios. We have made changes to Smarthaven:
+To cope with complex business scenarios, We have made changes to Smarthaven:
 The business in the project is stripped, and the functions are decoupled to separate five independent individuals,they are [Metadb](https://github.com/vmeta42/metadb), [Metaedge](https://github.com/vmeta42/metaedg), [Metatoc](https://github.com/vmeta42/metato), [Metaai](https://github.com/vmeta42/metaai), [Metashow](https://github.com/vmeta42/metashow).
 
 After decoupling, the project flexibility is greatly improved, making the project more lightweight and convenient for community partners to choose appropriate projects according to their own business needs.
